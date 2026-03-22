@@ -31,7 +31,6 @@ A company knowledge assistant that answers questions about internal policies and
 ├── mcp_server.py         # FastMCP server exposing 3 tools
 ├── rag_eval.py           # Pull Phoenix spans → evaluate with LLM-as-judge
 ├── phoenix_datasets.py   # Create eval datasets + run experiments in Phoenix
-├── experiment.py         # Grid runner (embedding × prompt × model combos)
 ├── config.py             # All settings, model config, LLM provider abstraction
 ├── data.csv              # Sample company policy data (synthetic, 20 rows)
 ├── Dockerfile
