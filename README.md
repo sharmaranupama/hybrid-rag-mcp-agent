@@ -3,15 +3,8 @@
 
 RAG system with hybrid search, a ReAct agent, MCP tool exposure, and LLM evaluation — built as a weekend learning project.
 
-**Stack:**  
-Qdrant  
-Arize Phoenix
-LangGraph 
-FastMCP
-Ollama
-Gemini
-Streamlit
-Docker
+
+**Stack:** Qdrant · Arize Phoenix · LangGraph · FastMCP · Ollama · Gemini · Streamlit · Docker
 
 ---
 
