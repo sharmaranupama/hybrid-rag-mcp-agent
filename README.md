@@ -41,12 +41,14 @@ bashollama pull nomic-embed-text   # embedding model (required)
 ollama pull llama3.2           # reasoning model (required for Ollama provider)
 2. Configure environment
 bashcp .env.example .env
-# Edit .env — add GEMINI_API_KEY if you want Gemini provider or fast eval
+### Edit .env — add GEMINI_API_KEY if you want Gemini provider or fast eval
 3. Start the stack
-bashdocker-compose up --build
+docker-compose up --build
 This starts four services:
-ServicePortPurposeQdrant6333Vector databasePhoenix6006Observability + eval UIMCP server6274/6277FastMCP tool serverStreamlit UI8501Main interface
-4. Ingest data and start chatting
+<img width="865" height="336" alt="image" src="https://github.com/user-attachments/assets/76ab7a7f-0f43-4875-9e32-84aeb166c70d" />
+
+
+6. Ingest data and start chatting
 Open http://localhost:8501
 
 Data Ingestion tab → upload data.csv → click Start Hybrid Ingestion
