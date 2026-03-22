@@ -1,8 +1,17 @@
-# rag-mcp-knowledge-agent
+# hybrid-rag-mcp-agent
 
-A production-grade RAG system with hybrid search, a ReAct agent, MCP tool exposure, and LLM evaluation — built as a weekend learning project.
 
-**Stack:** Qdrant · Arize Phoenix · LangGraph · FastMCP · Ollama · Gemini · Streamlit · Docker
+RAG system with hybrid search, a ReAct agent, MCP tool exposure, and LLM evaluation — built as a weekend learning project.
+
+**Stack:**  
+Qdrant  
+Arize Phoenix
+LangGraph 
+FastMCP
+Ollama
+Gemini
+Streamlit
+Docker
 
 ---
 
@@ -223,24 +232,8 @@ Phoenix traces every span automatically. Open [http://localhost:6006](http://loc
 
 ---
 
-## Connecting to Claude Desktop or Cursor via MCP
-
-Add to your MCP config:
-
-```json
-{
-  "mcpServers": {
-    "company-knowledge": {
-      "url": "http://localhost:6274/sse"
-    }
-  }
-}
-```
 
 Three tools will appear: `search_company_policy`, `compare_policies`, `ask_agent`.
 
 ---
 
-
-
-MIT
