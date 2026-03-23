@@ -59,7 +59,6 @@ ollama pull llama3.2           # reasoning model (required for Ollama provider)
 ### 2. Configure environment
 
 ```bash
-cp .env.example .env
 # Edit .env — add GEMINI_API_KEY if you want Gemini provider or fast eval
 ```
 
