@@ -1,0 +1,56 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage:z
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "6006:6006"
+    environment:
+      - PHOENIX_PORT=6006
+      - PHOENIX_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6006 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mcp-server:
+    build: .
+    ports:
+      - "6274:6274"
+      - "6277:6277"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
+      - PHOENIX_PROJECT_NAME=mcp-company-knowledge-server
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - qdrant
+      - phoenix
+
+  ui:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - qdrant
+      - phoenix
+    command: ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

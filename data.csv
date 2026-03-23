@@ -1,0 +1,21 @@
+id,topic,year,category,information
+1,Remote Policy,2024,HR,Employees can work from home up to 3 days per week.
+2,Office Hours,2024,Operations,The main office is open from 8:00 AM to 6:00 PM EST.
+3,Health Benefits,2025,Benefits,Dental and Vision coverage are included in the Gold plan.
+4,Travel Reimbursement,2026,Finance,Business travel must be pre-approved. Mileage is reimbursed at $0.67 per mile as of 2026.
+5,Professional Development,2025,HR,Each employee has a $2500 annual budget for certifications and conferences.
+6,Security Protocols,2025,IT,Multi-factor authentication (MFA) is mandatory for all GCP and internal platform access.
+7,On-Call Rotation,2025,Engineering,Platform teams follow a weekly rotation. On-call engineers receive a $500 weekly stipend.
+8,Pet Policy,2024,Operations,The main office is dog-friendly on Fridays for well-behaved pets with up-to-date vaccinations.
+9,Hardware Refresh,2025,IT,Laptops are eligible for an upgrade every 3 years. Standard issue is a 32GB RAM workstation.
+10,Parental Leave,2024,HR,Employees are entitled to 12 weeks of paid parental leave for the birth or adoption of a child.
+11,Generative AI Usage,2026,IT,Employees may use approved LLMs for coding assistance but must not paste sensitive client data.
+12,Referral Bonus,2025,HR,A $3000 bonus is paid for successful hires referred by current employees after 90 days of service.
+13,Dress Code,2024,HR,The office follows a "Smart Casual" dress code. Formal attire is only required for client-facing meetings.
+14,Performance Reviews,2024,HR,Annual performance reviews are conducted in December. Mid-year check-ins occur in June.
+15,Vacation Policy (PTO),2024,HR,Employees accrue 15 days of paid vacation (PTO) per year which can be rolled over for up to 2 years. PTO is the same as paid time off or vacation days.
+16,Remote Work Stipend,2026,Benefits,Employees working remotely are eligible for a $100 monthly stipend to cover home office expenses.
+17,Vacation Policy (PTO),2026,HR,Employees accrue 18 days of paid vacation (PTO) per year as of 2026 . This applies to all full-time employees.
+18,Remote Policy,2026,HR,Employees can work from home up to 4 days per week as of 2026.
+19,Health Benefits,2024,Benefits,Basic medical coverage only in 2024. 
+20,Parental Leave,2026,HR,Parental leave extended to 16 weeks paid as of 2026.

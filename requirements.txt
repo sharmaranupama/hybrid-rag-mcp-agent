@@ -1,0 +1,24 @@
+# Core AI and Orchestration
+google-genai
+langgraph
+langchain-mcp-adapters
+mcp
+ollama==0.6.1
+
+# Database and Data Handling
+qdrant-client
+pandas
+python-dotenv
+
+# Observability and Tracing
+arize-phoenix-otel
+openinference-instrumentation-mcp
+openinference-instrumentation-langchain
+opentelemetry-exporter-otlp-proto-http
+arize-phoenix
+arize-phoenix-evals
+litellm
+
+# UI
+streamlit
+fastembed
