@@ -18,7 +18,6 @@ A company knowledge assistant that answers questions about internal policies and
 - **Full observability** — every span traced in Arize Phoenix via OpenTelemetry auto-instrumentation
 - **LLM-as-judge evaluation** — Hallucination, QA Correctness, and Context Relevance scored with Phoenix evaluators (Gemini or Ollama as judge)
 
----
 
 ## Project structure
 
@@ -225,7 +224,13 @@ Phoenix traces every span automatically. Open [http://localhost:6006](http://loc
 ---
 
 
-Three tools will appear: `search_company_policy`, `compare_policies`, `ask_agent`.
 
----
+## References
 
+1. [Qdrant Documentation](https://qdrant.tech/documentation/)
+2. [Qdrant Hybrid Search](https://qdrant.tech/articles/hybrid-search/)
+3. [Arize Phoenix Documentation](https://docs.arize.com/phoenix)
+4. [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
+5. [FastMCP](https://github.com/jlowin/fastmcp)
+6. [FastEmbed BM25](https://qdrant.github.io/fastembed/)
+7. [Model Context Protocol](https://modelcontextprotocol.io/)
