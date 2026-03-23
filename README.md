@@ -14,7 +14,7 @@ A company knowledge assistant that answers questions about internal policies and
 
 - **Hybrid search** — dense (nomic-embed-text) + sparse (BM25) vectors fused with RRF, served by Qdrant
 - **Three retrieval layers** — direct RAG, a LangGraph multi-year comparison workflow, and a ReAct agent that routes between them
-- **MCP server** — all three tools exposed via FastMCP, callable from Claude Desktop, Cursor, or any MCP client
+- **MCP server** — all three tools exposed via FastMCP, callable from any MCP client
 - **Full observability** — every span traced in Arize Phoenix via OpenTelemetry auto-instrumentation
 - **LLM-as-judge evaluation** — Hallucination, QA Correctness, and Context Relevance scored with Phoenix evaluators (Gemini or Ollama as judge)
 <img width="1262" height="715" alt="image" src="https://github.com/user-attachments/assets/833a1c24-718b-4dbf-afaa-546331f54531" />
