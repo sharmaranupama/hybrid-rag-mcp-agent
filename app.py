@@ -1,14 +1,3 @@
-"""
-app.py — Streamlit UI for the Company Knowledge Agent.
-
-Tabs:
-  1. Data Ingestion          — Upload a CSV and push it to Qdrant
-  2. Agent Chat              — Ask questions via the ReAct agent
-  3. Qdrant & Phoenix        — Collection stats + observability dashboard
-  4. Datasets & Experiments  — Run and view Phoenix eval experiments
-  5. RAG Eval                — LLM-as-judge scoring + logs results back to Phoenix
-"""
-
 import os
 import glob
 import io
@@ -20,7 +9,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Observability (must be set up before importing tool modules) ───────────────
 from phoenix.otel import register
 from openinference.instrumentation.langchain import LangChainInstrumentor
 import config
@@ -38,23 +26,12 @@ tracer_provider = register(
 )
 LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
 
-# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Company Knowledge Agent", layout="wide")
-st.markdown("""
-<style>
-#MainMenu { visibility: hidden; }
-header    { visibility: hidden; }
-footer    { visibility: hidden; }
-</style>
-""", unsafe_allow_html=True)
+st.markdown("<style>#MainMenu{visibility:hidden}header{visibility:hidden}footer{visibility:hidden}</style>",
+            unsafe_allow_html=True)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Helpers
-# ══════════════════════════════════════════════════════════════════════════════
 
 def check_qdrant():
-    """Return (ok: bool, num_collections: int)."""
     try:
         from qdrant_client import QdrantClient
         qc = QdrantClient(url=QDRANT_URL, timeout=3)
@@ -66,11 +43,9 @@ def check_qdrant():
 
 
 def check_ollama():
-    """Return (ok: bool, model_names: list)."""
     try:
         from ollama import Client as OllamaClient
-        oc       = OllamaClient(host=OLLAMA_HOST)
-        response = oc.list()
+        response = OllamaClient(host=OLLAMA_HOST).list()
         if isinstance(response, dict):
             models = [m.get("name", "") for m in response.get("models", [])]
         else:
@@ -81,7 +56,6 @@ def check_ollama():
 
 
 def check_phoenix():
-    """Return True if Phoenix is reachable."""
     try:
         import urllib.request
         url = PHOENIX_COLLECTOR_ENDPOINT.replace("/v1/traces", "")
@@ -91,23 +65,17 @@ def check_phoenix():
 
 
 def validate_gemini_key(api_key: str, model_name: str) -> tuple[bool, str]:
-    """Validate a Gemini API key by making a tiny test call."""
     if not api_key or not api_key.strip():
         return False, "No API key provided."
     try:
         from google import genai
-        client = genai.Client(api_key=api_key.strip())
-        client.models.generate_content(model=model_name, contents="Say OK")
+        genai.Client(api_key=api_key.strip()).models.generate_content(model=model_name, contents="Say OK")
         return True, "Key is valid."
     except Exception as e:
         return False, str(e)
 
 
 def _capture_stdout(fn):
-    """
-    Run fn(), stream its stdout line-by-line into a Streamlit code block,
-    and return (output_str, error_or_None).
-    """
     lines      = []
     output_box = st.empty()
 
@@ -129,29 +97,6 @@ def _capture_stdout(fn):
 
 
 def log_evaluations_to_phoenix(eval_df, hallucination_df, qa_df, relevance_df):
-    """
-    Send LLM-as-judge eval scores back to Phoenix as span annotations.
-
-    Uses the official Phoenix client API (per docs.arize.com/phoenix):
-      phoenix_client.spans.log_span_annotations(span_annotations=[...])
-
-    Each SpanAnnotationData is linked to the original trace span via span_id,
-    so annotations appear inline when you open a trace in the Phoenix UI.
-
-    Scores:
-      hallucination:     1.0 = hallucinated (bad),  0.0 = grounded (good)
-      qa_correctness:    1.0 = correct (good),       0.0 = incorrect (bad)
-      context_relevance: 1.0 = relevant (good),      0.0 = irrelevant (bad)
-
-    Args:
-        eval_df:           DataFrame indexed by context.span_id
-        hallucination_df:  Output from HallucinationEvaluator — indexed by span_id
-        qa_df:             Output from QAEvaluator             — indexed by span_id
-        relevance_df:      Output from RelevanceEvaluator      — indexed by span_id
-
-    Returns:
-        (True, success_message) or (False, error_message)
-    """
     try:
         from phoenix.client import Client
         from phoenix.client.resources.spans import SpanAnnotationData
@@ -160,62 +105,36 @@ def log_evaluations_to_phoenix(eval_df, hallucination_df, qa_df, relevance_df):
         annotations    = []
 
         for span_id in eval_df.index:
-
-            # ── Hallucination ──────────────────────────────────────────────
             if span_id in hallucination_df.index:
                 row = hallucination_df.loc[span_id]
                 annotations.append(SpanAnnotationData(
-                    name="hallucination",
-                    span_id=str(span_id),
-                    annotator_kind="LLM",
-                    result={
-                        "label": row["label"],
-                        "score": 1.0 if row["label"] == "hallucinated" else 0.0,
-                    },
+                    name="hallucination", span_id=str(span_id), annotator_kind="LLM",
+                    result={"label": row["label"], "score": 1.0 if row["label"] == "hallucinated" else 0.0},
                     metadata={"explanation": str(row.get("explanation", ""))},
                 ))
-
-            # ── QA Correctness ─────────────────────────────────────────────
             if span_id in qa_df.index:
                 row = qa_df.loc[span_id]
                 annotations.append(SpanAnnotationData(
-                    name="qa_correctness",
-                    span_id=str(span_id),
-                    annotator_kind="LLM",
-                    result={
-                        "label": row["label"],
-                        "score": 1.0 if row["label"] == "correct" else 0.0,
-                    },
+                    name="qa_correctness", span_id=str(span_id), annotator_kind="LLM",
+                    result={"label": row["label"], "score": 1.0 if row["label"] == "correct" else 0.0},
                     metadata={"explanation": str(row.get("explanation", ""))},
                 ))
-
-            # ── Context Relevance ──────────────────────────────────────────
             if span_id in relevance_df.index:
                 row = relevance_df.loc[span_id]
                 annotations.append(SpanAnnotationData(
-                    name="context_relevance",
-                    span_id=str(span_id),
-                    annotator_kind="LLM",
-                    result={
-                        "label": row["label"],
-                        "score": 1.0 if row["label"] == "relevant" else 0.0,
-                    },
+                    name="context_relevance", span_id=str(span_id), annotator_kind="LLM",
+                    result={"label": row["label"], "score": 1.0 if row["label"] == "relevant" else 0.0},
                     metadata={"explanation": str(row.get("explanation", ""))},
                 ))
 
-        # Send all annotations to Phoenix in a single async call
-        phoenix_client.spans.log_span_annotations(
-            span_annotations=annotations,
-            sync=False,
-        )
-
+        phoenix_client.spans.log_span_annotations(span_annotations=annotations, sync=False)
         return True, f"Logged {len(annotations)} annotations to Phoenix ({PHOENIX_BASE_URL})."
 
     except Exception as e:
         return False, f"Phoenix annotation logging failed: {e}"
 
 
-# ── Session state defaults ─────────────────────────────────────────────────────
+# Session state defaults
 for key, default in {
     "llm_provider":     config.get_provider(),
     "gemini_api_key":   config.get_gemini_api_key(),
@@ -233,13 +152,12 @@ for key, default in {
     if key not in st.session_state:
         st.session_state[key] = default
 
-# Check services once per render (results reused across all tabs)
 qdrant_ok, n_collections = check_qdrant()
 ollama_ok, model_list    = check_ollama()
 phoenix_ok               = check_phoenix()
 
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
+# Sidebar
 with st.sidebar:
     st.markdown("## Company Knowledge")
     st.markdown("---")
@@ -254,19 +172,17 @@ with st.sidebar:
     st.caption("Built with LangGraph + MCP + Qdrant + Ollama/Gemini")
 
 
-# ── Model selector (top bar, always visible) ───────────────────────────────────
+# Model selector
 with st.container():
     st.markdown("### 🧠 Reasoning Model")
     col_provider, col_model, col_key, col_btn, col_status = st.columns([1.2, 2, 2.5, 1.2, 2])
 
     with col_provider:
         provider = st.radio(
-            "Provider",
-            options=["ollama", "gemini"],
+            "Provider", options=["ollama", "gemini"],
             index=0 if st.session_state.llm_provider == "ollama" else 1,
             format_func=lambda x: "Ollama" if x == "ollama" else "Gemini",
-            horizontal=False,
-            key="provider_radio",
+            horizontal=False, key="provider_radio",
         )
 
     with col_model:
@@ -275,11 +191,8 @@ with st.container():
             default_idx   = model_options.index(st.session_state.gemini_model) \
                             if st.session_state.gemini_model in model_options else 0
             selected_model = st.selectbox(
-                "Gemini Model",
-                options=model_options,
-                index=default_idx,
-                format_func=lambda m: GEMINI_MODELS[m],
-                key="gemini_model_select",
+                "Gemini Model", options=model_options, index=default_idx,
+                format_func=lambda m: GEMINI_MODELS[m], key="gemini_model_select",
             )
             if selected_model != st.session_state.gemini_model:
                 st.session_state.gemini_model     = selected_model
@@ -291,11 +204,8 @@ with st.container():
     with col_key:
         if provider == "gemini":
             api_key = st.text_input(
-                "API Key",
-                value=st.session_state.gemini_api_key,
-                type="password",
-                placeholder="Paste Gemini API key...",
-                key="gemini_key_input",
+                "API Key", value=st.session_state.gemini_api_key, type="password",
+                placeholder="Paste Gemini API key...", key="gemini_key_input",
             )
             if api_key != st.session_state.gemini_api_key:
                 st.session_state.gemini_key_valid = None
@@ -331,15 +241,12 @@ with st.container():
     st.divider()
 
 
-# ── Tabs ───────────────────────────────────────────────────────────────────────
 tab_ingest, tab_agent, tab_stats, tab_datasets, tab_eval = st.tabs(
     ["Data Ingestion", "Agent Chat", "Qdrant & Phoenix", "Datasets & Experiments", "RAG Eval"]
 )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # Tab 1 — Data Ingestion
-# ══════════════════════════════════════════════════════════════════════════════
 with tab_ingest:
     st.header("Ingest Data into Qdrant")
     st.write("Upload a CSV. Each row gets **dense** (semantic) + **BM25** (keyword) vectors.")
@@ -368,16 +275,13 @@ with tab_ingest:
                 if not qdrant_ok or not ollama_ok:
                     st.error("Qdrant and Ollama must both be running.")
                 else:
-                    # Write to a temp file so ingest_csv can read it from disk
                     with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
                         df.to_csv(tmp.name, index=False)
                         tmp_path = tmp.name
                     progress = st.progress(0, text="Setting up hybrid collection...")
                     try:
                         from ingest import ingest_csv
-                        def _update(frac, msg):
-                            progress.progress(min(frac, 0.99), text=msg)
-                        ingest_csv(tmp_path, progress_callback=_update)
+                        ingest_csv(tmp_path, progress_callback=lambda frac, msg: progress.progress(min(frac, 0.99), text=msg))
                         progress.progress(1.0, text="Done!")
                         st.success(f"Ingested {len(df)} rows with hybrid vectors.")
                     except Exception as e:
@@ -386,9 +290,7 @@ with tab_ingest:
                         os.unlink(tmp_path)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # Tab 2 — Agent Chat
-# ══════════════════════════════════════════════════════════════════════════════
 with tab_agent:
     st.header("Ask the Agent")
     st.write("The ReAct agent reasons step by step, calling tools as needed.")
@@ -397,7 +299,6 @@ with tab_agent:
     active_model    = config.get_gemini_model() if active_provider == "gemini" else REASONING_MODEL
     st.info(f"Reasoning with **{active_provider}** → `{active_model}`", icon="🧠")
 
-    # Example question shortcuts
     example_questions = [
         "What is the company's remote work policy?",
         "Compare vacation policy between 2024 and 2026",
@@ -405,15 +306,14 @@ with tab_agent:
         "Compare parental leave policy between 2024 and 2026",
     ]
     st.write("Try these:")
-    for idx, q in enumerate(st.columns(len(example_questions))):
-        with q:
+    for idx, col in enumerate(st.columns(len(example_questions))):
+        with col:
             if st.button(example_questions[idx], key=f"ex_{idx}", use_container_width=True):
                 st.session_state["prefill_query"] = example_questions[idx]
 
     st.markdown("---")
 
     def render_message(msg: dict):
-        """Display a single chat message, with reasoning steps expandable."""
         with st.chat_message(msg["role"]):
             if msg["role"] == "assistant":
                 scratchpad = msg.get("scratchpad", [])
@@ -422,15 +322,12 @@ with tab_agent:
                 iterations = msg.get("iterations", 0)
                 model_used = msg.get("model_used", "")
 
-                # Show the think/act steps in a collapsible section
                 if scratchpad:
                     with st.expander("Reasoning steps", expanded=False):
                         for entry in scratchpad:
                             color = "#1a73e8" if entry["role"] == "Thought" else "#2e7d32"
-                            st.markdown(
-                                f"<span style='font-weight:600;color:{color}'>{entry['role']}</span>",
-                                unsafe_allow_html=True,
-                            )
+                            st.markdown(f"<span style='font-weight:600;color:{color}'>{entry['role']}</span>",
+                                        unsafe_allow_html=True)
                             st.caption(entry["content"])
                             st.divider()
 
@@ -442,11 +339,9 @@ with tab_agent:
             else:
                 st.markdown(msg["content"])
 
-    # Render existing conversation history
     for msg in st.session_state.messages:
         render_message(msg)
 
-    # Handle new user input (either typed or from an example button)
     prefill    = st.session_state.pop("prefill_query", None)
     user_input = st.chat_input("Ask about company policies...") or prefill
 
@@ -468,7 +363,6 @@ with tab_agent:
                     from agent import build_agent_graph
                     import agent as agent_module
 
-                    # Wrap think/act to show live progress in the UI
                     original_think = agent_module.think
                     original_act   = agent_module.act
                     step_counter   = {"n": 0}
@@ -478,13 +372,11 @@ with tab_agent:
                         step_counter["n"] += 1
                         try:
                             with progress_box:
-                                st.markdown(
-                                    f"<span style='font-weight:600;color:#1a73e8'>Thought (step {step_counter['n']})</span>",
-                                    unsafe_allow_html=True,
-                                )
+                                st.markdown(f"<span style='font-weight:600;color:#1a73e8'>Thought (step {step_counter['n']})</span>",
+                                            unsafe_allow_html=True)
                                 st.caption("Deciding what to do next...")
                         except Exception:
-                            pass  # Streamlit context may be gone mid-stream
+                            pass
                         return original_think(state)
 
                     def act_with_progress(state):
@@ -501,7 +393,6 @@ with tab_agent:
                             pass
                         return original_act(state)
 
-                    # Temporarily replace think/act with progress-aware versions
                     agent_module.think = think_with_progress
                     agent_module.act   = act_with_progress
 
@@ -513,7 +404,6 @@ with tab_agent:
                         "tools_used": [], "iteration": 0, "_next_action": "", "_next_input": "",
                     })
 
-                    # Restore original functions
                     agent_module.think = original_think
                     agent_module.act   = original_act
 
@@ -528,7 +418,6 @@ with tab_agent:
                     )
                     st.markdown(answer)
 
-                    # Show which chunks were retrieved and their scores
                     try:
                         from query import fetch_context_with_scores, _collection_has_named_vectors
                         chunks = fetch_context_with_scores(user_input)
@@ -538,8 +427,7 @@ with tab_agent:
                                     score_str = f"{c['score']:.4f}" if c['score'] else "n/a"
                                     st.markdown(f"**#{ci+1}** score: `{score_str}` | topic: `{c['topic']}` | year: `{c['year']}`")
                                     st.caption(c['text'][:200])
-                                is_hybrid = _collection_has_named_vectors()
-                                st.caption(f"Search mode: {'hybrid (dense + BM25 RRF)' if is_hybrid else 'dense only'}")
+                                st.caption(f"Search mode: {'hybrid (dense + BM25 RRF)' if _collection_has_named_vectors() else 'dense only'}")
                     except Exception:
                         pass
 
@@ -559,9 +447,7 @@ with tab_agent:
                     })
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # Tab 3 — Qdrant & Phoenix stats
-# ══════════════════════════════════════════════════════════════════════════════
 with tab_stats:
     st.header("Qdrant & Phoenix Dashboard")
     col_qdrant, col_phoenix = st.columns(2)
@@ -630,8 +516,7 @@ with tab_stats:
             st.markdown(f"**Project:** `{PHOENIX_PROJECT_NAME}`")
             try:
                 from phoenix.client import Client as _PxC
-                _px   = _PxC(base_url=PHOENIX_BASE_URL)
-                spans = _px.spans.get_spans_dataframe(project_name=PHOENIX_PROJECT_NAME)
+                spans = _PxC(base_url=PHOENIX_BASE_URL).spans.get_spans_dataframe(project_name=PHOENIX_PROJECT_NAME)
                 if spans is not None and not spans.empty:
                     st.metric("Total spans", len(spans))
                     if "span_kind" in spans.columns:
@@ -649,9 +534,7 @@ with tab_stats:
             st.warning("Phoenix is not reachable.")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # Tab 4 — Datasets & Experiments
-# ══════════════════════════════════════════════════════════════════════════════
 with tab_datasets:
     st.header("Phoenix Datasets & Experiments")
     st.write("Create eval datasets, run experiments, and view results — all from the UI.")
@@ -733,12 +616,8 @@ with tab_datasets:
         st.subheader("Local Experiment Results")
         csv_files = sorted(glob.glob("experiments/*.csv"), reverse=True)
         if csv_files:
-            selected = st.selectbox(
-                "Select a result file",
-                options=csv_files,
-                format_func=os.path.basename,
-                key="exp_csv_select",
-            )
+            selected = st.selectbox("Select a result file", options=csv_files,
+                                    format_func=os.path.basename, key="exp_csv_select")
             if selected:
                 try:
                     result_df = pd.read_csv(selected)
@@ -759,9 +638,7 @@ with tab_datasets:
             st.caption("No experiment CSVs found yet. Run an experiment first.")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Tab 5 — RAG Eval (LLM-as-judge + Phoenix annotation logging)
-# ══════════════════════════════════════════════════════════════════════════════
+# Tab 5 — RAG Eval
 with tab_eval:
     st.header("RAG Evaluation")
     st.write(
@@ -775,7 +652,6 @@ with tab_eval:
     if not qdrant_ok:
         st.warning("Qdrant is not reachable.")
 
-    # ── Judge model selector ──────────────────────────────────────────────────
     st.markdown("#### Judge model")
     _ep = config.get_provider()
     _ek = config.get_gemini_api_key()
@@ -811,10 +687,7 @@ with tab_eval:
         else:
             from qdrant_client import QdrantClient as _QC
             from ollama import Client as _OC
-            from phoenix.evals import (
-                HallucinationEvaluator, QAEvaluator, RelevanceEvaluator,
-                LiteLLMModel, run_evals,
-            )
+            from phoenix.evals import HallucinationEvaluator, QAEvaluator, RelevanceEvaluator, LiteLLMModel, run_evals
 
             log_lines = []
             log_area  = st.empty()
@@ -829,13 +702,13 @@ with tab_eval:
             sys.stdout = _StreamCapture()
 
             try:
-                # ── 1. Fetch spans from Phoenix ───────────────────────────
                 with st.spinner("Fetching spans from Phoenix…"):
                     spans_df = None
                     try:
                         from phoenix.client import Client as _PhxClient
-                        _phx     = _PhxClient(base_url=PHOENIX_BASE_URL)
-                        spans_df = _phx.spans.get_spans_dataframe(project_name=PHOENIX_PROJECT_NAME)
+                        spans_df = _PhxClient(base_url=PHOENIX_BASE_URL).spans.get_spans_dataframe(
+                            project_name=PHOENIX_PROJECT_NAME
+                        )
                         print(f"Pulled {len(spans_df)} spans via new Phoenix client.")
                     except Exception as e1:
                         print(f"New client failed: {e1}, trying legacy…")
@@ -856,7 +729,6 @@ with tab_eval:
                 if spans_df is None or spans_df.empty:
                     st.error("No spans found. Run some queries in the Agent Chat tab first.")
                 else:
-                    # ── 2. Normalise column names across Phoenix versions ──
                     def _find_col(df, *candidates):
                         return next((c for c in candidates if c in df.columns), None)
 
@@ -866,11 +738,7 @@ with tab_eval:
                     print(f"Column mapping: input←'{input_col}', output←'{output_col}', name←'{name_col}'")
 
                     if not input_col or not output_col:
-                        st.error(
-                            f"Cannot find input/output columns.\n"
-                            f"Available: {list(spans_df.columns)}\n"
-                            f"Run some queries in Agent Chat first."
-                        )
+                        st.error(f"Cannot find input/output columns.\nAvailable: {list(spans_df.columns)}\nRun some queries in Agent Chat first.")
                         st.stop()
 
                     rename = {k: v for k, v in [
@@ -881,14 +749,12 @@ with tab_eval:
                     if rename:
                         spans_df = spans_df.rename(columns=rename)
 
-                    # ── 3. Keep root spans only (filter out LangGraph child nodes) ──
                     parent_col = _find_col(spans_df, "parent_id", "context.parent_id", "parent_span_id")
                     if parent_col:
                         root_df  = spans_df[spans_df[parent_col].isna()]
                         spans_df = root_df if not root_df.empty else spans_df
                         print(f"Root spans after filtering: {len(spans_df)}")
 
-                    # Filter by span kind (prefer TOOL > CHAIN > LLM)
                     kind_col  = _find_col(spans_df, "span_kind", "context.span_kind", "kind",
                                           "attributes.openinference.span.kind")
                     target_df = spans_df
@@ -900,7 +766,6 @@ with tab_eval:
                                 print(f"Using {len(f)} {kind} spans.")
                                 break
 
-                    # Drop rows with empty or error input/output
                     target_df = (
                         target_df
                         .dropna(subset=["input", "output"])
@@ -912,7 +777,6 @@ with tab_eval:
                     if target_df.empty:
                         st.error("No usable spans after filtering. Run some queries first.")
                     else:
-                        # ── 4. Re-fetch context from Qdrant for each span ──
                         print(f"Evaluating {len(target_df)} spans…")
                         _qc = _QC(url=QDRANT_URL)
                         _oc = _OC(host=OLLAMA_HOST)
@@ -921,10 +785,6 @@ with tab_eval:
                             return _oc.embed(model=EMBED_MODEL, input=text).embeddings[0]
 
                         def _extract_question(raw: str) -> str:
-                            """
-                            CHAIN spans store the full LangGraph state as JSON.
-                            Extract just the plain question string from it.
-                            """
                             import json as _json
                             raw = raw.strip()
                             try:
@@ -941,17 +801,12 @@ with tab_eval:
                             return raw
 
                         def _get_context(query_text: str) -> str:
-                            """Re-retrieve context from Qdrant for a given question."""
                             vec = _embed(query_text)
                             try:
-                                pts = _qc.query_points(
-                                    collection_name=COLLECTION_NAME,
-                                    query=vec, using="dense", limit=5,
-                                )
+                                pts = _qc.query_points(collection_name=COLLECTION_NAME,
+                                                       query=vec, using="dense", limit=5)
                             except Exception:
-                                pts = _qc.query_points(
-                                    collection_name=COLLECTION_NAME, query=vec, limit=5,
-                                )
+                                pts = _qc.query_points(collection_name=COLLECTION_NAME, query=vec, limit=5)
                             return "\n".join(p.payload.get("original_text", "") for p in pts.points)
 
                         rows = []
@@ -974,8 +829,6 @@ with tab_eval:
 
                         eval_df_raw = pd.DataFrame(rows)
 
-                        # Deduplicate: same question can appear across multiple LangGraph nodes.
-                        # Keep the version with the longest (most complete) output.
                         before = len(eval_df_raw)
                         eval_df_raw["_len"] = eval_df_raw["output"].str.len()
                         eval_df_raw = (
@@ -987,11 +840,9 @@ with tab_eval:
                         )
                         print(f"Deduplicated {before} spans → {len(eval_df_raw)} unique questions.")
 
-                        # Index by span_id so evaluator results stay aligned
                         eval_df = eval_df_raw.set_index("context.span_id")
                         print(f"Prepared {len(eval_df)} rows for eval.")
 
-                        # ── 5. Run LLM-as-judge evals ─────────────────────
                         if use_gemini_judge:
                             os.environ["GEMINI_API_KEY"] = _ek
                             judge_model = LiteLLMModel(model=f"gemini/{_em}", max_tokens=512)
@@ -1015,7 +866,6 @@ with tab_eval:
                                 concurrency=1,
                             )
 
-                        # Compute aggregate percentages for the metrics cards
                         h = hallucination_df["label"].value_counts(normalize=True).get("hallucinated", 0)
                         q = qa_df["label"].value_counts(normalize=True).get("correct", 0)
                         r = relevance_df["label"].value_counts(normalize=True).get("relevant", 0)
@@ -1030,26 +880,15 @@ with tab_eval:
                             "context_relevance":  round(r * 100, 1),
                         }
 
-                        # ── 6. Log eval results back to Phoenix as annotations ──
-                        # After this step each trace in Phoenix will show:
-                        #   hallucination / qa_correctness / context_relevance
-                        # in the Annotations panel on the right side of the trace view.
                         print("Uploading annotations to Phoenix…")
                         with st.spinner("Logging annotations to Phoenix…"):
-                            ok, log_msg = log_evaluations_to_phoenix(
-                                eval_df,
-                                hallucination_df,
-                                qa_df,
-                                relevance_df,
-                            )
+                            ok, log_msg = log_evaluations_to_phoenix(eval_df, hallucination_df, qa_df, relevance_df)
                         if ok:
                             st.success(log_msg)
-                            print(log_msg)
                         else:
                             st.warning(log_msg)
-                            print(log_msg)
+                        print(log_msg)
 
-                        # Build per-row detail table for the breakdown section below
                         detail = eval_df_raw[["input", "output"]].copy()
                         detail["hallucination"]     = hallucination_df["label"].values
                         detail["hallucination_exp"] = hallucination_df.get("explanation", pd.Series()).values
@@ -1065,7 +904,6 @@ with tab_eval:
                 sys.stdout = old_stdout
                 st.session_state.eval_log = "".join(log_lines)
 
-    # ── Display eval results ──────────────────────────────────────────────────
     if st.session_state.eval_scores:
         scores = st.session_state.eval_scores
         st.divider()
@@ -1079,7 +917,6 @@ with tab_eval:
         m3.metric("🔵 Context Relevance",  f"{scores['context_relevance']}%")
         m3.caption("Retrieved chunks relevant to the query — **higher is better**")
 
-        # Per-query breakdown table with colour-coded hallucination column
         if st.session_state.eval_detail_df is not None:
             st.markdown("#### Per-query breakdown")
             detail = st.session_state.eval_detail_df

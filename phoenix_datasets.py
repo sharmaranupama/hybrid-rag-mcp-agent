@@ -1,10 +1,8 @@
 """
-phoenix_datasets.py — Manage evaluation datasets and experiments in Phoenix (Arize).
-
-Commands:
-  python phoenix_datasets.py create-dataset   # Upload TEST_EXAMPLES to Phoenix
-  python phoenix_datasets.py run-experiment   # Query the RAG and score every example
-  python phoenix_datasets.py show-datasets    # List all datasets in Phoenix
+Usage:
+  python phoenix_datasets.py create-dataset
+  python phoenix_datasets.py run-experiment
+  python phoenix_datasets.py show-datasets
 """
 
 import os
@@ -25,12 +23,6 @@ from config import (
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL   = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
 
-# ── Test dataset ──────────────────────────────────────────────────────────────
-# These are the sample questions used for evaluation.
-# "in-scope"   — questions the system should answer confidently
-# "comparison" — questions requiring year-over-year comparison
-# "out-of-scope" — questions where no relevant data exists
-
 TEST_EXAMPLES = [
     {"input": "What is the remote work policy?",                     "expected_topic": "Remote Policy",         "category": "in-scope"},
     {"input": "How many days of vacation do employees get?",         "expected_topic": "Vacation Policy (PTO)", "category": "in-scope"},
@@ -45,34 +37,22 @@ TEST_EXAMPLES = [
 ]
 
 
-# ── Phoenix client helpers ────────────────────────────────────────────────────
-
 def _new_client():
-    """Return a new-style Phoenix client (arize-phoenix-client >= 1.22)."""
     from phoenix.client import Client
     return Client(base_url=PHOENIX_BASE_URL)
 
 def _legacy_client():
-    """Return a legacy Phoenix client (arize-phoenix)."""
     import phoenix as px
     return px.Client(endpoint=PHOENIX_BASE_URL)
 
 
-# ── Commands ──────────────────────────────────────────────────────────────────
-
 def create_dataset():
-    """
-    Upload TEST_EXAMPLES to Phoenix as a named evaluation dataset.
-    Tries the new client API first, falls back to the legacy API,
-    and finally saves a CSV if neither works.
-    """
     inputs   = [{"question": ex["input"]} for ex in TEST_EXAMPLES]
     metadata = [{"expected_topic": ex["expected_topic"] or "none", "category": ex["category"]}
                 for ex in TEST_EXAMPLES]
 
-    print(f"Creating dataset '{PHOENIX_DATASET_NAME}' in Phoenix...")
+    print(f"Creating dataset '{PHOENIX_DATASET_NAME}'...")
 
-    # --- New client API ---
     try:
         client  = _new_client()
         dataset = client.datasets.create_dataset(
@@ -81,53 +61,41 @@ def create_dataset():
             inputs=inputs,
             metadata=metadata,
         )
-        print(f"  Created '{dataset.name}' with {len(dataset)} examples.")
-        print(f"  View at {PHOENIX_BASE_URL}/datasets")
+        print(f"Created '{dataset.name}' with {len(dataset)} examples.")
+        print(f"View at {PHOENIX_BASE_URL}/datasets")
         return
     except Exception as e:
-        # If the dataset already exists, append to it instead
         if "already exists" in str(e).lower() or "conflict" in str(e).lower():
             try:
                 _new_client().append_to_dataset(
                     dataset_name=PHOENIX_DATASET_NAME, inputs=inputs, metadata=metadata
                 )
-                print(f"  Appended {len(inputs)} examples to existing dataset.")
-                print(f"  View at {PHOENIX_BASE_URL}/datasets")
+                print(f"Appended {len(inputs)} examples to existing dataset.")
                 return
             except Exception as e2:
-                print(f"  Append failed: {e2}")
+                print(f"Append failed: {e2}")
         else:
-            print(f"  New client error: {e}")
+            print(f"New client error: {e}")
 
-    # --- Legacy client API ---
     try:
         _legacy_client().upload_dataset(
             dataset_name=PHOENIX_DATASET_NAME, inputs=inputs, metadata=metadata
         )
-        print(f"  Created via legacy API.")
-        print(f"  View at {PHOENIX_BASE_URL}/datasets")
+        print("Created via legacy API.")
         return
     except Exception as e:
-        print(f"  Legacy upload error: {e}")
+        print(f"Legacy upload error: {e}")
 
-    # --- CSV fallback ---
-    print("\n  Could not create dataset via API. Saving as CSV for manual upload...")
     os.makedirs("experiments", exist_ok=True)
     csv_path = "experiments/eval_dataset.csv"
     pd.DataFrame([
         {"question": ex["input"], "expected_topic": ex["expected_topic"] or "none", "category": ex["category"]}
         for ex in TEST_EXAMPLES
     ]).to_csv(csv_path, index=False)
-    print(f"  Saved to {csv_path}. Upload manually at {PHOENIX_BASE_URL}/datasets")
+    print(f"Saved to {csv_path}. Upload manually at {PHOENIX_BASE_URL}/datasets")
 
 
 def run_experiment():
-    """
-    Run a RAG evaluation experiment:
-      1. For each test question, retrieve context and generate an answer.
-      2. Score answers with LLM-as-judge (hallucination, QA correctness, context relevance).
-      3. Save results locally as CSV and upload to Phoenix.
-    """
     from query import fetch_context_with_scores
 
     provider  = get_provider()
@@ -138,13 +106,11 @@ def run_experiment():
     print(f"Provider: {provider}, Model: {model}\n{'='*60}")
 
     results = []
-
     for i, ex in enumerate(TEST_EXAMPLES):
         question = ex["input"]
         print(f"\n[{i+1}/{len(TEST_EXAMPLES)}] {question}")
         t0 = time.time()
 
-        # Retrieve context
         try:
             chunks = fetch_context_with_scores(question)
         except Exception as e:
@@ -153,7 +119,6 @@ def run_experiment():
 
         context = "\n".join(c["text"] for c in chunks)
 
-        # Generate answer
         if context:
             prompt = (
                 f"Context:\n{context}\n\nQuestion: {question}\n\n"
@@ -188,13 +153,11 @@ def run_experiment():
         print(f"  Answer: {answer[:120]}...")
         print(f"  Latency: {latency}s")
 
-    # Save results locally
     df = pd.DataFrame(results)
     os.makedirs("experiments", exist_ok=True)
     csv_path = f"experiments/{exp_name}.csv"
     df.to_csv(csv_path, index=False)
 
-    # Print per-category summary
     print(f"\n\n{'='*60}\nEXPERIMENT RESULTS: {exp_name}\n{'='*60}")
     for cat in ["in-scope", "comparison", "out-of-scope"]:
         cat_df = df[df["category"] == cat]
@@ -206,7 +169,6 @@ def run_experiment():
         if cat != "out-of-scope":
             print(f"    Topic hit rate : {cat_df['topic_found'].mean()*100:.0f}%")
 
-    # LLM-as-judge evaluation
     eval_results = {}
     try:
         from phoenix.evals import (
@@ -214,13 +176,11 @@ def run_experiment():
             LiteLLMModel, run_evals,
         )
 
-        # Rename columns to what Phoenix evaluators expect
         eval_df = df.rename(columns={"question": "input", "answer": "output", "context": "reference"})
         if "context" not in eval_df.columns:
             eval_df["context"] = eval_df["reference"]
         eval_df = eval_df.reset_index(drop=True)
 
-        # Prepare judges: always Ollama, add Gemini if key is available
         judges = {}
         os.environ["OLLAMA_API_BASE"] = OLLAMA_HOST
         judges["ollama"] = {"label": f"ollama/{REASONING_MODEL}",
@@ -258,7 +218,6 @@ def run_experiment():
     except Exception as e:
         print(f"  Eval scoring failed: {e}")
 
-    # Upload experiment results to Phoenix
     try:
         _new_client().datasets.create_dataset(
             name=exp_name,
@@ -283,15 +242,12 @@ def run_experiment():
 
 
 def show_datasets():
-    """List all datasets currently stored in Phoenix."""
-    # Try new client first, fall back to legacy
     for get_client, list_fn in [
         (_new_client, lambda c: c.datasets.list()),
         (_legacy_client, lambda c: c.list_datasets()),
     ]:
         try:
-            client   = get_client()
-            datasets = list_fn(client)
+            datasets = list_fn(get_client())
             if not datasets:
                 print("No datasets found.")
                 return
@@ -306,8 +262,6 @@ def show_datasets():
 
     print(f"Could not list datasets. Is Phoenix running at {PHOENIX_BASE_URL}?")
 
-
-# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     commands = {"create-dataset": create_dataset, "run-experiment": run_experiment, "show-datasets": show_datasets}

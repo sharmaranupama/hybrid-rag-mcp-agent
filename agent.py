@@ -1,17 +1,3 @@
-"""
-agent.py — ReAct-style agent built with LangGraph.
-
-Loop: think → act → [think again if needed] → synthesize → END
-
-The agent picks the right tool based on the question:
-  - search_company_policy: single-topic lookup via RAG
-  - compare_policies:      year-over-year comparison via LangGraph flow
-  - finish:                return the answer directly
-
-A safety check overrides misrouted comparison queries (e.g. LLM picks
-search_company_policy when the question clearly mentions multiple years).
-"""
-
 import re
 import json
 from typing import TypedDict, List
@@ -20,24 +6,20 @@ from query import ask_rag
 from langgraph_flow import build_graph as build_compare_graph
 from config import llm_generate
 
-MAX_ITERATIONS = 3  # Stop looping after this many think/act cycles
+MAX_ITERATIONS = 3
 
-
-# ── Agent state ───────────────────────────────────────────────────────────────
 
 class AgentState(TypedDict):
     question:     str
-    scratchpad:   List[dict]  # Running log of Thought and Observation entries
+    scratchpad:   List[dict]
     answer:       str
     tools_used:   List[str]
     iteration:    int
-    _next_action: str         # Action decided in think(), consumed by act()
-    _next_input:  str         # Input for the next action
+    _next_action: str
+    _next_input:  str
 
 
 VALID_ACTIONS = {"search_company_policy", "compare_policies", "finish"}
-
-# ── Prompt ────────────────────────────────────────────────────────────────────
 
 REACT_PROMPT = """You are a company policy assistant. You can call these tools:
 
@@ -67,10 +49,7 @@ Examples:
 {{"thought": "I have the answer.", "action": "finish", "action_input": "The remote work policy allows..."}}"""
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def format_scratchpad(scratchpad: List[dict]) -> str:
-    """Render the scratchpad as readable text for the prompt."""
     if not scratchpad:
         return "None yet."
     parts = []
@@ -83,11 +62,6 @@ def format_scratchpad(scratchpad: List[dict]) -> str:
 
 
 def parse_json_response(text: str) -> tuple:
-    """
-    Extract (thought, action, action_input) from the LLM's JSON output.
-    Falls back to regex if the JSON is malformed.
-    """
-    # Try JSON parse first
     match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
     if match:
         try:
@@ -95,7 +69,6 @@ def parse_json_response(text: str) -> tuple:
             thought      = str(data.get("thought", "")).strip()
             action       = str(data.get("action", "finish")).strip().lower().replace(" ", "_")
             action_input = str(data.get("action_input", "")).strip()
-            # Normalise any partial action name
             if action not in VALID_ACTIONS:
                 action = next((v for v in VALID_ACTIONS if v in action), "finish")
             return thought, action, action_input
@@ -113,21 +86,12 @@ def parse_json_response(text: str) -> tuple:
 
 
 def detect_comparison_query(question: str) -> bool:
-    """
-    Heuristic check: does the question look like a year-over-year comparison?
-    Used as a safety net to catch LLM misrouting.
-    """
     q = question.lower()
     compare_words = ["compare", "comparison", "difference", "changed", "changes", "vs", "versus", "between"]
-    has_compare_word  = any(w in q for w in compare_words)
-    has_multiple_years = len(set(re.findall(r"20\d{2}", q))) >= 2
-    return has_compare_word and has_multiple_years
+    return any(w in q for w in compare_words) and len(set(re.findall(r"20\d{2}", q))) >= 2
 
-
-# ── Graph nodes ───────────────────────────────────────────────────────────────
 
 def think(state: AgentState) -> dict:
-    """Ask the LLM what to do next and parse its action decision."""
     prompt = REACT_PROMPT.format(
         scratchpad=format_scratchpad(state["scratchpad"]),
         question=state["question"],
@@ -135,7 +99,6 @@ def think(state: AgentState) -> dict:
     raw = llm_generate(prompt, json_mode=True)
     thought, action, action_input = parse_json_response(raw)
 
-    # Safety net: override misrouted comparison queries
     if action == "search_company_policy" and detect_comparison_query(state["question"]):
         action       = "compare_policies"
         action_input = state["question"]
@@ -150,44 +113,31 @@ def think(state: AgentState) -> dict:
     }
 
 
-# Pre-built comparison graph (shared across all agent invocations)
 _compare_graph = build_compare_graph()
 
 
 def act(state: AgentState) -> dict:
-    """Execute the action chosen by think() and record the observation."""
     action       = state.get("_next_action", "finish")
     action_input = state.get("_next_input", "") or state["question"]
 
     if action == "search_company_policy":
         result    = ask_rag(action_input)
         tool_name = "search_company_policy"
-
     elif action == "compare_policies":
-        graph_result = _compare_graph.invoke({
-            "query": action_input, "years": [], "results": [], "final_answer": "",
-        })
-        result    = graph_result["final_answer"]
+        result    = _compare_graph.invoke({"query": action_input, "years": [], "results": [], "final_answer": ""})["final_answer"]
         tool_name = "compare_policies"
-
     elif action == "finish":
-        return {"answer": action_input}  # action_input is the final answer
-
+        return {"answer": action_input}
     else:
         return {"answer": f"Unrecognised action '{action}'."}
 
-    observation = {"role": "Observation", "content": result}
     return {
-        "scratchpad": state["scratchpad"] + [observation],
+        "scratchpad": state["scratchpad"] + [{"role": "Observation", "content": result}],
         "tools_used": state.get("tools_used", []) + [tool_name],
     }
 
 
 def synthesize(state: AgentState) -> dict:
-    """
-    If the agent hit the iteration limit, synthesize a final answer from all
-    observations collected so far instead of looping again.
-    """
     if state.get("answer"):
         return {"answer": state["answer"]}
 
@@ -210,26 +160,18 @@ def synthesize(state: AgentState) -> dict:
 
 
 def should_continue(state: AgentState) -> str:
-    """
-    Routing function called after act().
-    Returns the name of the next node to visit.
-    """
     if state.get("answer"):
         return "finish"
     if state.get("_next_action") == "finish":
         return "finish"
     if state.get("iteration", 0) >= MAX_ITERATIONS:
         return "synthesize"
-    # If we already have at least one observation, synthesize instead of looping
     if any(e["role"] == "Observation" for e in state.get("scratchpad", [])):
         return "synthesize"
     return "think"
 
 
-# ── Graph assembly ────────────────────────────────────────────────────────────
-
 def build_agent_graph():
-    """Compile and return the ReAct agent graph."""
     graph = StateGraph(AgentState)
     graph.add_node("think",      think)
     graph.add_node("act",        act)
@@ -243,8 +185,6 @@ def build_agent_graph():
     )
     return graph.compile()
 
-
-# ── Quick smoke test ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     agent = build_agent_graph()
